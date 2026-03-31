@@ -1,30 +1,67 @@
-const occasions = ["Party", "Wedding", "Office", "Casual", "Festive", "Date Night"];
+import { useState } from 'react';
 
-export default function Step3Occasion({ value, onChange }) {
+const C = { dark:'#1C1A18', mid:'#6B6560', accent:'#C4A882', white:'#FDFCFB', cream:'#F7F3EE' };
+const serif = { fontFamily:'var(--serif)' };
+const upper = { textTransform:'uppercase', letterSpacing:'2px' };
+
+const occasions = [
+  { id:'wedding',  label:'Wedding',    icon:'✦', desc:'Ceremonies & receptions' },
+  { id:'festive',  label:'Festive',    icon:'◈', desc:'Diwali, Eid, Holi & more' },
+  { id:'work',     label:'Work',       icon:'⊕', desc:'Office & business' },
+  { id:'casual',   label:'Casual',     icon:'◉', desc:'Daily wear & outings' },
+  { id:'party',    label:'Party',      icon:'⊛', desc:'Nights out & events' },
+  { id:'travel',   label:'Travel',     icon:'○', desc:'Comfortable & versatile' },
+];
+
+export default function Step3_Occasion({ onNext, onBack, data }) {
+  const [selected, setSelected] = useState(data.occasions || []);
+
+  const toggle = (id) => setSelected(prev =>
+    prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+  );
+
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {occasions.map((occasion) => (
-        <button
-          key={occasion}
-          type="button"
-          className={`rounded-[24px] border p-5 text-left transition ${
-            value === occasion
-              ? "border-pink-400 bg-gradient-to-br from-fuchsia-500/25 to-rose-500/20"
-              : "border-white/10 bg-white/5 hover:bg-white/10"
-          }`}
-          onClick={() => onChange(occasion)}
-        >
-          <p className="text-lg font-semibold text-white">{occasion}</p>
-          <p className="mt-2 text-sm text-slate-300">
-            {occasion === "Wedding" && "Dress up in statement silhouettes and rich festive colors."}
-            {occasion === "Party" && "Pick an eye-catching look with movement and shine."}
-            {occasion === "Office" && "Balance polish, comfort, and all-day elegance."}
-            {occasion === "Casual" && "Stay breezy, versatile, and easy to style."}
-            {occasion === "Festive" && "Celebrate with color, texture, and occasion sparkle."}
-            {occasion === "Date Night" && "Lean into flattering cuts and confident color stories."}
-          </p>
-        </button>
-      ))}
+    <div>
+      <button onClick={onBack} style={{ background:'none', border:'none', color:C.mid, ...upper, fontSize:'10px', marginBottom:'24px', padding:0, cursor:'pointer' }}>
+        ← Back
+      </button>
+      <h2 style={{ ...serif, fontSize:'38px', fontWeight:300, marginBottom:'8px' }}>
+        Where are you<br /><em style={{ fontStyle:'italic', color:C.accent }}>headed?</em>
+      </h2>
+      <p style={{ fontSize:'13px', color:C.mid, marginBottom:'36px', fontWeight:300, lineHeight:1.7 }}>
+        Select all that apply — we'll curate looks for every moment.
+      </p>
+
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'36px' }}>
+        {occasions.map(o => {
+          const active = selected.includes(o.id);
+          return (
+            <button key={o.id} onClick={() => toggle(o.id)} style={{
+              padding:'16px', border:`0.5px solid ${active ? C.dark : '#D9D2C8'}`,
+              background: active ? C.dark : C.white,
+              color: active ? C.white : C.dark,
+              textAlign:'left', cursor:'pointer', transition:'all 0.15s',
+            }}>
+              <div style={{ fontSize:'20px', marginBottom:'8px', color: active ? C.accent : '#B5A895' }}>{o.icon}</div>
+              <div style={{ ...upper, fontSize:'11px', fontWeight:500, marginBottom:'4px' }}>{o.label}</div>
+              <div style={{ fontSize:'11px', color: active ? '#B8B2AA' : C.mid, fontWeight:300 }}>{o.desc}</div>
+            </button>
+          );
+        })}
+      </div>
+
+      <button
+        onClick={() => onNext({ occasions: selected })} disabled={selected.length === 0}
+        style={{
+          width:'100%', padding:'16px',
+          background: selected.length ? C.dark : '#D9D2C8',
+          color: selected.length ? C.white : '#A09A94', border:'none',
+          ...upper, fontSize:'11px', fontWeight:500,
+          cursor: selected.length ? 'pointer' : 'not-allowed', transition:'background 0.15s',
+        }}
+      >
+        Continue →
+      </button>
     </div>
   );
 }

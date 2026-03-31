@@ -1,118 +1,79 @@
-import { useRef, useState } from "react";
+import { useState } from 'react';
 
-const manualTones = ["Fair", "Wheatish", "Dusky", "Deep"];
+const C = { dark:'#1C1A18', mid:'#6B6560', accent:'#C4A882', white:'#FDFCFB' };
+const serif = { fontFamily:'var(--serif)' };
+const upper = { textTransform:'uppercase', letterSpacing:'2px' };
 
-const detectWithTensor = async (file) => {
-  const tf = await import("@tensorflow/tfjs");
-  const imageBitmap = await createImageBitmap(file);
-  const tensor = tf.browser.fromPixels(imageBitmap).resizeNearestNeighbor([128, 128]);
-  const channels = await tf.mean(tensor, [0, 1]).array();
-  tensor.dispose();
+const skinTones = [
+  { id:'fair',     label:'Fair',     hex:'#F5DEB3', desc:'Light, sometimes pinkish' },
+  { id:'wheatish', label:'Wheatish', hex:'#C8A882', desc:'Warm golden-beige' },
+  { id:'medium',   label:'Medium',   hex:'#A0724A', desc:'Medium brown' },
+  { id:'dusky',    label:'Dusky',    hex:'#7A4A2A', desc:'Deep warm brown' },
+  { id:'dark',     label:'Dark',     hex:'#4A2A14', desc:'Rich deep brown' },
+];
 
-  const [r, g, b] = channels;
-  const brightness = (r + g + b) / 3;
-  let skinTone = "Wheatish";
-  if (brightness > 190) skinTone = "Fair";
-  else if (brightness > 150) skinTone = "Wheatish";
-  else if (brightness > 110) skinTone = "Dusky";
-  else skinTone = "Deep";
-
-  let undertone = "Neutral";
-  if (r - b > 18) undertone = "Warm";
-  if (b - r > 18) undertone = "Cool";
-
-  return { skin_tone: skinTone, undertone };
-};
-
-export default function Step2SkinTone({
-  values,
-  onChange,
-  onUploadDetection,
-  detecting,
-}) {
-  const fileRef = useRef(null);
-  const [preview, setPreview] = useState(null);
-
-  const handleUpload = async (file) => {
-    if (!file) return;
-    setPreview(URL.createObjectURL(file));
-    const localResult = await detectWithTensor(file);
-    onChange("detection_mode", "upload");
-    onChange("skin_tone", localResult.skin_tone);
-    onChange("undertone", localResult.undertone);
-    await onUploadDetection(file, localResult);
-  };
+export default function Step2_SkinTone({ onNext, onBack, data }) {
+  const [selected, setSelected] = useState(data.skinTone || '');
+  const [photoMode, setPhotoMode] = useState(false);
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-4 lg:grid-cols-[1.2fr,0.8fr]">
-        <div className="rounded-3xl border border-white/10 bg-slate-950/30 p-5">
-          <div className="mb-3">
-            <p className="text-lg font-semibold text-white">Option A: Upload Selfie</p>
-            <p className="text-sm text-slate-300">
-              TensorFlow.js runs a quick on-device color analysis, then the backend confirms the tone.
-            </p>
-          </div>
-          <button className="secondary-button" onClick={() => fileRef.current?.click()} type="button">
-            Upload Photo
+    <div>
+      <button onClick={onBack} style={{ background:'none', border:'none', color:C.mid, ...upper, fontSize:'10px', marginBottom:'24px', padding:0, cursor:'pointer' }}>
+        ← Back
+      </button>
+      <h2 style={{ ...serif, fontSize:'38px', fontWeight:300, marginBottom:'8px' }}>
+        Your skin<br /><em style={{ fontStyle:'italic', color:C.accent }}>tone</em>
+      </h2>
+      <p style={{ fontSize:'13px', color:C.mid, marginBottom:'36px', fontWeight:300, lineHeight:1.7 }}>
+        This helps us match colours that naturally complement you.
+      </p>
+
+      {/* Tone swatches */}
+      <div style={{ display:'flex', flexDirection:'column', gap:'10px', marginBottom:'28px' }}>
+        {skinTones.map(t => (
+          <button key={t.id} onClick={() => setSelected(t.id)} style={{
+            display:'flex', alignItems:'center', gap:'16px',
+            padding:'14px 16px',
+            border:`0.5px solid ${selected===t.id ? C.dark : '#D9D2C8'}`,
+            background: selected===t.id ? '#F7F3EE' : C.white,
+            cursor:'pointer', textAlign:'left', transition:'all 0.15s',
+          }}>
+            <div style={{ width:'36px', height:'36px', borderRadius:'50%', background:t.hex, flexShrink:0 }} />
+            <div>
+              <div style={{ ...upper, fontSize:'11px', fontWeight:500, color:C.dark }}>{t.label}</div>
+              <div style={{ fontSize:'12px', color:C.mid, marginTop:'2px' }}>{t.desc}</div>
+            </div>
+            {selected===t.id && <span style={{ marginLeft:'auto', color:C.accent, fontSize:'18px' }}>✓</span>}
           </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(event) => handleUpload(event.target.files?.[0])}
-          />
-          {detecting && <p className="mt-3 text-sm text-pink-200">Analyzing your selfie...</p>}
-          {preview && (
-            <img
-              src={preview}
-              alt="Skin tone preview"
-              className="mt-4 h-52 w-full rounded-3xl object-cover"
-            />
-          )}
-        </div>
-        <div className="rounded-3xl border border-white/10 bg-slate-950/30 p-5">
-          <p className="text-lg font-semibold text-white">Option B: Manual Selection</p>
-          <p className="mb-4 text-sm text-slate-300">
-            Pick the closest match if you prefer not to upload a photo.
-          </p>
-          <div className="grid grid-cols-2 gap-3">
-            {manualTones.map((tone) => (
-              <button
-                key={tone}
-                type="button"
-                className={`rounded-2xl border px-3 py-3 text-sm font-semibold transition ${
-                  values.skin_tone === tone
-                    ? "border-pink-400 bg-pink-500/20 text-white"
-                    : "border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
-                }`}
-                onClick={() => {
-                  onChange("detection_mode", "manual");
-                  onChange("skin_tone", tone);
-                  onChange(
-                    "undertone",
-                    tone === "Fair" ? "Cool" : tone === "Wheatish" ? "Neutral" : "Warm"
-                  );
-                }}
-              >
-                {tone}
-              </button>
-            ))}
-          </div>
-        </div>
+        ))}
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-          <p className="text-sm text-slate-300">Detected skin tone</p>
-          <p className="mt-1 text-2xl font-semibold text-white">{values.skin_tone}</p>
-        </div>
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-          <p className="text-sm text-slate-300">Undertone classification</p>
-          <p className="mt-1 text-2xl font-semibold text-white">{values.undertone}</p>
-        </div>
+      {/* AI detect option */}
+      <div style={{ borderTop:`0.5px solid #D9D2C8`, paddingTop:'20px', marginBottom:'32px' }}>
+        <p style={{ fontSize:'12px', color:C.mid, marginBottom:'12px' }}>Or let AI detect your skin tone:</p>
+        <label style={{
+          display:'flex', alignItems:'center', gap:'12px', padding:'14px 16px',
+          border:`0.5px solid #D9D2C8`, background:C.white, cursor:'pointer',
+          fontSize:'13px', color:C.mid,
+        }}>
+          <span style={{ fontSize:'18px', color:C.accent }}>◈</span>
+          Upload a photo for AI detection
+          <input type="file" accept="image/*" style={{ display:'none' }} onChange={() => {}} />
+        </label>
       </div>
+
+      <button
+        onClick={() => onNext({ skinTone: selected })} disabled={!selected}
+        style={{
+          width:'100%', padding:'16px',
+          background: selected ? C.dark : '#D9D2C8',
+          color: selected ? C.white : '#A09A94', border:'none',
+          ...upper, fontSize:'11px', fontWeight:500,
+          cursor: selected ? 'pointer' : 'not-allowed', transition:'background 0.15s',
+        }}
+      >
+        Continue →
+      </button>
     </div>
   );
 }
