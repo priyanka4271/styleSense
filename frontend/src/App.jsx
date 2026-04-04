@@ -3,6 +3,7 @@ import Navbar from './components/Navbar';
 import HomePage from './pages/HomePage';
 import QuizContainer from './components/Quiz/QuizContainer';
 import ResultsPage from './components/Results/ResultsPage';
+import ColorGuide from './components/ColorGuide';
 import './index.css';
 
 export default function App() {
@@ -10,9 +11,10 @@ export default function App() {
     <BrowserRouter>
       <Navbar />
       <Routes>
-        <Route path="/"        element={<HomePage />} />
-        <Route path="/quiz"    element={<QuizContainer />} />
-        <Route path="/results" element={<ResultsPage />} />
+        <Route path="/"            element={<HomePage />} />
+        <Route path="/quiz"        element={<QuizContainer />} />
+        <Route path="/results"     element={<ResultsPage />} />
+        <Route path="/color-guide" element={<ColorGuide />} />
       </Routes>
     </BrowserRouter>
   );

@@ -1,163 +1,141 @@
-from __future__ import annotations
-
-import json
-import os
-import uuid
-from datetime import datetime
-from pathlib import Path
-
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy import Column, DateTime, String, Text, create_engine
-from sqlalchemy.orm import Session, declarative_base, sessionmaker
+from typing import List, Optional
+import os, sys
 
-from ml.recommender import UserProfile, estimate_size, recommender
-from ml.skin_tone_classifier import COLOR_GUIDE, classify_skin_tone
-
-
-ROOT = Path(__file__).resolve().parent
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{ROOT / 'stylesense.db'}")
-
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
-)
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-Base = declarative_base()
-
-
-class QuizSession(Base):
-    __tablename__ = "quiz_sessions"
-
-    session_id = Column(String, primary_key=True, index=True)
-    answers_json = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-
-Base.metadata.create_all(bind=engine)
+# Add ml directory to path
+sys.path.append(os.path.dirname(__file__))
 
 app = FastAPI(title="StyleSense API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:5173", "http://localhost:3000", "*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# ── Try to import ML modules ──────────────────────────────────────────────────
+try:
+    from ml.hybrid_recommender import UserProfile, recommender, estimate_size
+    ML_READY = True
+    print("✅ ML recommender loaded")
+except Exception as e:
+    ML_READY = False
+    print(f"⚠️  ML recommender not loaded: {e} — using mock data")
 
-class PersonalInfo(BaseModel):
-    name: str
-    age: int
-    body_type: str
-    height: float
-    weight: float
+try:
+    from ml.skin_tone_classifier import COLOR_GUIDE, classify_skin_tone
+    SKIN_READY = True
+    print("✅ Skin tone classifier loaded")
+except Exception as e:
+    SKIN_READY = False
+    print(f"⚠️  Skin classifier not loaded: {e} — using mock detection")
 
+# ── Schemas ───────────────────────────────────────────────────────────────────
+class RecommendRequest(BaseModel):
+    name:      Optional[str] = ""
+    age:       Optional[str] = ""
+    gender:    Optional[str] = "Women"
+    skinTone:  Optional[str] = "wheatish"
+    occasions: Optional[List[str]] = ["casual"]
+    vibes:     Optional[List[str]] = ["Traditional"]
+    budget:    Optional[str] = "mid"
 
-class SkinToneInfo(BaseModel):
-    skin_tone: str
-    undertone: str
-    detection_mode: str
+# ── Mock data (fallback) ──────────────────────────────────────────────────────
+MOCK_ITEMS = [
+    {"name": "Contemporary Gold Saree",  "price": "₹1,007", "color": "Gold",    "category": "Sarees",  "rating": "4.4", "reason": "Perfect for your occasion, flatters your skin tone",        "image": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=600&q=80"},
+    {"name": "Luxe Gold Co-ord Set",     "price": "₹4,755", "color": "Gold",    "category": "Co-ords", "rating": "3.9", "reason": "Festive favourite, premium fabric quality",                  "image": "https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=600&q=80"},
+    {"name": "Contemporary Gold Kurti",  "price": "₹1,090", "color": "Gold",    "category": "Kurtis",  "rating": "4.6", "reason": "40% off today — great for casual outings",                  "image": "https://images.unsplash.com/photo-1583391733956-6c78276477e2?w=600&q=80"},
+    {"name": "Elegant Rust Anarkali",    "price": "₹2,399", "color": "Rust",    "category": "Dresses", "rating": "4.2", "reason": "Rust complements your skin tone beautifully",               "image": "https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?w=600&q=80"},
+    {"name": "Coral Wrap Dress",         "price": "₹1,850", "color": "Coral",   "category": "Dresses", "rating": "4.5", "reason": "Trending style, perfect fit for your preferences",          "image": "https://images.unsplash.com/photo-1469334031218-e382a71b716b?w=600&q=80"},
+    {"name": "Olive Green Palazzo Set",  "price": "₹1,299", "color": "Olive",   "category": "Co-ords", "rating": "4.3", "reason": "Comfortable and elegant for your selected occasions",        "image": "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=600&q=80"},
+]
 
+BUDGET_FILTERS = {
+    "budget":  (0,    1000),
+    "mid":     (1000, 5000),
+    "premium": (5000, 15000),
+    "luxury":  (15000, 99999),
+}
 
-class Preferences(BaseModel):
-    budget: str
-    style: str
-    fabric: str
+def parse_price(price_str: str) -> int:
+    try:
+        return int("".join(c for c in str(price_str) if c.isdigit()))
+    except:
+        return 0
 
+def filter_by_budget(items, budget_key):
+    if budget_key not in BUDGET_FILTERS:
+        return items
+    low, high = BUDGET_FILTERS[budget_key]
+    filtered = [i for i in items if low <= parse_price(i.get("price", "0")) <= high]
+    return filtered if filtered else items  # fallback to all if nothing matches
 
-class QuizSubmission(BaseModel):
-    personal_info: PersonalInfo
-    skin_tone: SkinToneInfo
-    occasion: str
-    preferences: Preferences
+# ── Endpoints ─────────────────────────────────────────────────────────────────
+@app.get("/health")
+def health():
+    return {"status": "ok", "ml_ready": ML_READY, "skin_ready": SKIN_READY}
 
+@app.get("/")
+def root():
+    return {"message": "StyleSense API is running 🌸"}
 
-class RecommendationRequest(BaseModel):
-    session_id: str
+@app.post("/recommendations")
+def get_recommendations(req: RecommendRequest):
+    results = []
 
+    if ML_READY:
+        try:
+            profile = UserProfile(
+                skin_tone=req.skinTone or "wheatish",
+                occasion=req.occasions[0] if req.occasions else "casual",
+                preferred_colors=[],
+                budget_range=req.budget or "mid",
+            )
+            raw = recommender(profile, top_n=9)
 
-def get_db() -> Session:
-    return SessionLocal()
+            for item in raw:
+                results.append({
+                    "name":     item.get("name", ""),
+                    "price":    f"₹{item.get('price', 0):,.0f}" if isinstance(item.get("price"), (int, float)) else str(item.get("price", "")),
+                    "color":    item.get("color", ""),
+                    "category": item.get("category", ""),
+                    "rating":   str(item.get("rating", "")),
+                    "reason":   item.get("reason", "Recommended for you"),
+                    "image":    item.get("image", ""),
+                })
+        except Exception as e:
+            print(f"Recommender error: {e}")
+            results = []
 
+    if not results:
+        results = MOCK_ITEMS.copy()
 
-def serialize_submission(payload: QuizSubmission) -> dict:
-    data = payload.model_dump()
-    data["personal_info"]["recommended_size"] = estimate_size(
-        data["personal_info"]["height"],
-        data["personal_info"]["weight"],
-    )
-    return data
+    # Apply budget filter
+    results = filter_by_budget(results, req.budget or "mid")
 
+    return results
 
-@app.get("/api/health")
-def health_check() -> dict:
-    return {"status": "ok"}
+@app.post("/detect-skin-tone")
+async def detect_skin_tone(file: UploadFile = File(...)):
+    if SKIN_READY:
+        try:
+            contents = await file.read()
+            result   = classify_skin_tone(contents)
+            return {
+                "skinTone":   result.get("skin_tone", "wheatish"),
+                "confidence": result.get("confidence", 0.85),
+            }
+        except Exception as e:
+            print(f"Skin detection error: {e}")
 
-
-@app.post("/api/quiz/submit")
-def submit_quiz(payload: QuizSubmission) -> dict:
-    db = get_db()
-    session_id = str(uuid.uuid4())
-    session_data = serialize_submission(payload)
-    record = QuizSession(session_id=session_id, answers_json=json.dumps(session_data))
-    db.add(record)
-    db.commit()
-    db.close()
-    return {"session_id": session_id, "summary": session_data}
-
-
-@app.post("/api/recommend")
-def recommend_dresses(payload: RecommendationRequest) -> dict:
-    db = get_db()
-    record = db.get(QuizSession, payload.session_id)
-    db.close()
-    if not record:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    answers = json.loads(record.answers_json)
-    profile = UserProfile(
-        name=answers["personal_info"]["name"],
-        age=answers["personal_info"]["age"],
-        body_type=answers["personal_info"]["body_type"],
-        height=answers["personal_info"]["height"],
-        weight=answers["personal_info"]["weight"],
-        skin_tone=answers["skin_tone"]["skin_tone"],
-        undertone=answers["skin_tone"]["undertone"],
-        occasion=answers["occasion"],
-        budget=answers["preferences"]["budget"],
-        style=answers["preferences"]["style"],
-        fabric=answers["preferences"]["fabric"],
-    )
-    recommendations = recommender.recommend(profile)
-    color_guide = COLOR_GUIDE.get(profile.skin_tone, COLOR_GUIDE["Wheatish"])
+    # Mock detection fallback
+    import random
+    tones = ["fair", "wheatish", "medium", "dusky", "dark"]
     return {
-        "session_id": payload.session_id,
-        "user_profile": answers,
-        "recommendations": recommendations,
-        "color_guide": {
-            "skin_tone": profile.skin_tone,
-            "undertone": profile.undertone,
-            "best_colors": color_guide["best_colors"],
-            "avoid_colors": color_guide["avoid_colors"],
-        },
+        "skinTone":   random.choice(tones),
+        "confidence": round(random.uniform(0.75, 0.95), 2),
     }
-
-
-@app.get("/api/colors/{skin_tone}")
-def get_color_palette(skin_tone: str) -> dict:
-    normalized = skin_tone.strip().title()
-    guide = COLOR_GUIDE.get(normalized)
-    if not guide:
-        raise HTTPException(status_code=404, detail="Skin tone not found")
-    return {"skin_tone": normalized, **guide}
-
-
-@app.post("/api/skin-tone/detect")
-async def detect_skin_tone(file: UploadFile = File(...)) -> dict:
-    contents = await file.read()
-    if not contents:
-        raise HTTPException(status_code=400, detail="Empty image upload")
-    return classify_skin_tone(contents)

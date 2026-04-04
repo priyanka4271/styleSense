@@ -1,42 +1,27 @@
-import axios from "axios";
+const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
-const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://localhost:8000",
-});
-
-export const submitQuiz = async (payload) => {
-  const { data } = await api.post("/api/quiz/submit", payload);
-  return data;
-};
-
-export const getRecommendations = async (sessionId) => {
-  const { data } = await api.post("/api/recommend", { session_id: sessionId });
-  return data;
-};
-
-export const getColorGuide = async (skinTone) => {
-  const { data } = await api.get(`/api/colors/${skinTone}`);
-  return data;
-};
-
-export const detectSkinTone = async (file) => {
-  const formData = new FormData();
-  formData.append("file", file);
-  const { data } = await api.post("/api/skin-tone/detect", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
+export const getRecommendations = async (userData) => {
+  const res = await fetch(`${BASE_URL}/recommendations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(userData),
   });
-  return data;
+  if (!res.ok) throw new Error('API failed');
+  return res.json();
 };
 
-export const formatApiError = (error) => {
-  if (error.response) {
-    const message = error.response.data?.detail || error.response.data?.message || "Server error";
-    return `API ${error.response.status}: ${message}`;
-  }
-  if (error.request) {
-    return "Cannot reach backend API at http://localhost:8000. Make sure FastAPI is running.";
-  }
-  return error.message || "Unexpected API error";
+export const detectSkinTone = async (imageFile) => {
+  const formData = new FormData();
+  formData.append('file', imageFile);
+  const res = await fetch(`${BASE_URL}/detect-skin-tone`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!res.ok) throw new Error('Detection failed');
+  return res.json();
 };
 
-export default api;
+export const healthCheck = async () => {
+  const res = await fetch(`${BASE_URL}/health`);
+  return res.json();
+};
